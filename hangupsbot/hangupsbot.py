@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 
 # Install modern gettext class-based API in Python's builtins namespace first
 import os, gettext
@@ -9,7 +9,7 @@ gettext.install('hangupsbot', localedir=localedir)
 gettext.bindtextdomain('hangupsbot', localedir=localedir)
 gettext.textdomain('hangupsbot')
 
-import sys, argparse, logging, shutil, asyncio, time, signal
+import sys, argparse, logging, shutil, asyncio, time, signal, urllib, json
 
 import appdirs
 import hangups
@@ -19,6 +19,7 @@ from hangups.ui.utils import get_conv_name
 import hangupsbot.config
 from hangupsbot.version import __version__
 from hangupsbot.handlers import handler
+from pprint import pprint
 
 
 LOG_FORMAT = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
@@ -81,6 +82,31 @@ class HangupsBot:
                     print(_('Trying to connect again (try {} of {})...').format(retry + 1, self._max_retries))
             print(_('Maximum number of retries reached! Exiting...'))
         sys.exit(1)
+
+    @asyncio.coroutine
+    def get_queue_messages(self):
+        while True:
+            request = urllib.request.Request('http://localhost:3000/queue/hangouts-bot')
+            try:
+                response = urllib.request.urlopen(request).read().decode('utf8')
+            except (urllib.error.HTTPError, urllib.error.URLError) as error:
+                print('Could not connect to message gateway: ' + str(error.reason))
+                yield from asyncio.sleep(1)
+            else:
+                slackMessages = json.loads(response)
+                if slackMessages:
+                  for messageObj in slackMessages:
+                    route = messageObj['route']
+                    message = messageObj['message']
+                    conv = self._conv_list.get(route['to'])
+                    if not message['from']['username'] == "USLACKBOT":
+                        print('Relaying message to: ' + route['to'] + ' - from: ' + message['from']['username'] + ' - message: ' + message['message']['text'])
+                        segments = [
+                                    hangups.ChatMessageSegment('@' + message['from']['username'] + ': ', is_bold=True),
+                                    hangups.ChatMessageSegment(message['message']['text'])
+                                   ]
+                        self.send_message_segments(conv, segments)
+            yield from asyncio.sleep(1)
 
     def stop(self):
         """Disconnect from Hangouts"""
@@ -174,6 +200,7 @@ class HangupsBot:
         for c in self.list_conversations():
             print('  {} ({})'.format(get_conv_name(c, truncate=True), c.id_))
         print()
+        asyncio.async(self.get_queue_messages())
 
     def _on_event(self, conv_event):
         """Handle conversation events"""
