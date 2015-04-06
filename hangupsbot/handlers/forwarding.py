@@ -35,7 +35,10 @@ def handle_forward(bot, event):
                 #pprint(getmembers(event.user))
                 print('Relaying message to: ' + dst + ' from: ' + event.conv_id + ' @ ' + event.user.full_name + ' - message: ' + event.text)
                 request = urllib.request.Request(dst, data=json.dumps(payload).encode('utf8'), method='POST', headers={'Content-Type': 'application/json'})
-                response = urllib.request.urlopen(request)
+                try:
+                    response = urllib.request.urlopen(request)
+                except (urllib.error.HTTPError, urllib.error.URLError) as error:
+                    print('Could not connect to message gateway: ' + str(error.reason))                
             else:
                 try:
                     conv = bot._conv_list.get(dst)
